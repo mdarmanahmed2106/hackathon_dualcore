@@ -50,8 +50,10 @@ dependencies {
     // JSON
     implementation(libs.gson)
 
-    // khttp (via JitPack). Used for simple HTTP requests to Gemini/Places
-    implementation("com.github.jkcclemens:khttp:0.1.0")
+    // OkHttp for network requests
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.11.0") // Optional, for logging
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
