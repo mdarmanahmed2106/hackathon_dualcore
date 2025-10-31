@@ -11,7 +11,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.snackbar.Snackbar
-import khttp.get
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.logging.HttpLoggingInterceptor
 import org.json.JSONObject
 
 data class PlaceItem(val name: String, val vicinity: String, val lat: Double, val lng: Double)
@@ -80,37 +83,41 @@ class NearbyHospitalsActivity : AppCompatActivity() {
         }
     }
 
-    // Uses Places Web Service (Nearby Search) via simple HTTP request with khttp
-    // Uses OpenStreetMap's Overpass API to fetch nearby hospitals
-private fun fetchNearbyHospitals(lat: Double, lng: Double): List<PlaceItem> {
-    return try {
-        // Search radius in meters (approximately 3km)
-        val radius = 3000
-        // Overpass QL query to find hospitals and clinics near the location
-        val query = """
-            [out:json];
-            (
-              node["amenity"="hospital"](around:$radius,$lat,$lng);
-              way["amenity"="hospital"](around:$radius,$lat,$lng);
-              node["amenity"="clinic"](around:$radius,$lat,$lng);
-              way["amenity"="clinic"](around:$radius,$lat,$lng);
-            );
-            out body;
-            >;
-            out skel qt;
-        """.trimIndent()
+    private fun fetchNearbyHospitals(lat: Double, lng: Double): List<PlaceItem> {
+        return try {
+            val client = OkHttpClient.Builder()
+                .addInterceptor(HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BODY
+                })
+                .build()
 
-        val url = "https://overpass-api.de/api/interpreter"
-        val response = khttp.post(
-            url = url,
-            data = query,
-            headers = mapOf("Content-Type" to "text/plain")
-        )
+            // Search radius in meters (approximately 3km)
+            val radius = 3000
+            // Overpass QL query to find hospitals and clinics near the location
+            val query = """
+                [out:json];
+                (
+                  node["amenity"="hospital"](around:$radius,$lat,$lng);
+                  way["amenity"="hospital"](around:$radius,$lat,$lng);
+                  node["amenity"="clinic"](around:$radius,$lat,$lng);
+                  way["amenity"="clinic"](around:$radius,$lat,$lng);
+                );
+                out body;
+                >;
+                out skel qt;
+            """.trimIndent()
 
-        val out = mutableListOf<PlaceItem>()
-        if (response.statusCode in 200..299) {
-            val json = response.jsonObject
+            val request = Request.Builder()
+                .url("https://overpass-api.de/api/interpreter")
+                .post(query.toRequestBody("text/plain".toMediaTypeOrNull()!!))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: return emptyList()
+
+            val json = JSONObject(responseBody)
             val elements = json.optJSONArray("elements") ?: return emptyList()
+            val out = mutableListOf<PlaceItem>()
 
             for (i in 0 until elements.length()) {
                 val element = elements.getJSONObject(i)
@@ -138,15 +145,16 @@ private fun fetchNearbyHospitals(lat: Double, lng: Double): List<PlaceItem> {
             if (out.isEmpty()) {
                 out.add(PlaceItem("No hospitals found", "Try moving to a different location", lat, lng))
             }
+            out
+        } catch (e: Exception) {
+            e.printStackTrace()
+            listOf(PlaceItem("Error loading hospitals", "Please check your internet connection", lat, lng))
         }
-        out
-    } catch (e: Exception) {
-        e.printStackTrace()
-        listOf(PlaceItem("Error loading hospitals", "Please check your internet connection", lat, lng))
     }
-}
 
-    companion object { private const val REQ_LOCATION = 1001 }
+    companion object { 
+        private const val REQ_LOCATION = 1001 
+    }
 }
 
 class SimplePlaceAdapter(
@@ -171,5 +179,3 @@ class Text2Holder(itemView: android.view.View) : RecyclerView.ViewHolder(itemVie
     val title: android.widget.TextView = itemView.findViewById(android.R.id.text1)
     val subtitle: android.widget.TextView = itemView.findViewById(android.R.id.text2)
 }
-
-
