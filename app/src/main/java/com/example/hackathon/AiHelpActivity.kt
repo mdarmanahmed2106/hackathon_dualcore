@@ -10,7 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import khttp.post
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class AiHelpActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,7 +38,7 @@ class AiHelpActivity : AppCompatActivity() {
         }
     }
 
-    // Calls Gemini API using khttp. Replace YOUR_GEMINI_API_KEY with your real key.
+    // Calls Gemini API using OkHttp
     private fun getHealthAdvice(userPrompt: String): String {
         return try {
             val apiKey = System.getenv("GEMINI_API_KEY") ?: "AIzaSyCAsVbQaj8dy6pI9Mx1WPq-Eiy_8998oVY"
@@ -51,21 +54,28 @@ class AiHelpActivity : AppCompatActivity() {
                 })
             }
 
-            val response = post(
-                url = url,
-                headers = mapOf("Content-Type" to "application/json"),
-                data = payload.toString()
-            )
+            val client = OkHttpClient()
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val requestBody = payload.toString().toRequestBody(mediaType)
+            
+            val request = Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .addHeader("Content-Type", "application/json")
+                .build()
 
-            if (response.statusCode in 200..299) {
-                val json = response.jsonObject
+            val response = client.newCall(request).execute()
+
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                val json = JSONObject(responseBody)
                 val candidates = json.optJSONArray("candidates")
                 val content = candidates?.optJSONObject(0)?.optJSONObject("content")
                 val parts = content?.optJSONArray("parts")
                 val text = parts?.optJSONObject(0)?.optString("text").orEmpty()
                 if (text.isNotBlank()) text else "No response. Try again."
             } else {
-                "API error: ${response.statusCode}. Check your key and network."
+                "API error: ${response.code}. Check your key and network."
             }
         } catch (e: Exception) {
             "Failed to fetch advice: ${e.message}"
