@@ -36,12 +36,22 @@ android {
 }
 
 dependencies {
-
+    // AndroidX + Material
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.recyclerview)
+
+    // Location (FusedLocationProviderClient)
+    implementation(libs.play.services.location)
+
+    // JSON
+    implementation(libs.gson)
+
+    // khttp (via JitPack). Used for simple HTTP requests to Gemini/Places
+    implementation("com.github.jkcclemens:khttp:0.1.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
