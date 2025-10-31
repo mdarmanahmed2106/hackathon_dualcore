@@ -81,38 +81,70 @@ class NearbyHospitalsActivity : AppCompatActivity() {
     }
 
     // Uses Places Web Service (Nearby Search) via simple HTTP request with khttp
-    private fun fetchNearbyHospitals(lat: Double, lng: Double): List<PlaceItem> {
-        return try {
-            val apiKey = System.getenv("PLACES_API_KEY") ?: "YOUR_GOOGLE_PLACES_API_KEY"
-            val url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-            val params = mapOf(
-                "location" to "$lat,$lng",
-                "radius" to "3000",
-                "type" to "hospital",
-                "key" to apiKey
-            )
-            val response = get(url = url, params = params)
-            if (response.statusCode in 200..299) {
-                val json = response.jsonObject
-                val results = json.optJSONArray("results")
-                val out = mutableListOf<PlaceItem>()
-                if (results != null) {
-                    for (i in 0 until results.length()) {
-                        val o: JSONObject = results.getJSONObject(i)
-                        val geometry = o.optJSONObject("geometry")?.optJSONObject("location")
-                        val name = o.optString("name")
-                        val vicinity = o.optString("vicinity")
-                        val plat = geometry?.optDouble("lat") ?: 0.0
-                        val plng = geometry?.optDouble("lng") ?: 0.0
-                        out.add(PlaceItem(name, vicinity, plat, plng))
+    // Uses OpenStreetMap's Overpass API to fetch nearby hospitals
+private fun fetchNearbyHospitals(lat: Double, lng: Double): List<PlaceItem> {
+    return try {
+        // Search radius in meters (approximately 3km)
+        val radius = 3000
+        // Overpass QL query to find hospitals and clinics near the location
+        val query = """
+            [out:json];
+            (
+              node["amenity"="hospital"](around:$radius,$lat,$lng);
+              way["amenity"="hospital"](around:$radius,$lat,$lng);
+              node["amenity"="clinic"](around:$radius,$lat,$lng);
+              way["amenity"="clinic"](around:$radius,$lat,$lng);
+            );
+            out body;
+            >;
+            out skel qt;
+        """.trimIndent()
+
+        val url = "https://overpass-api.de/api/interpreter"
+        val response = khttp.post(
+            url = url,
+            data = query,
+            headers = mapOf("Content-Type" to "text/plain")
+        )
+
+        val out = mutableListOf<PlaceItem>()
+        if (response.statusCode in 200..299) {
+            val json = response.jsonObject
+            val elements = json.optJSONArray("elements") ?: return emptyList()
+
+            for (i in 0 until elements.length()) {
+                val element = elements.getJSONObject(i)
+                if (element.has("tags")) {
+                    val tags = element.getJSONObject("tags")
+                    val name = tags.optString("name", "Unnamed Hospital/Clinic")
+                    val address = tags.optString("addr:full", 
+                        tags.optString("addr:street", "Address not available"))
+                    
+                    // Get coordinates (handles both nodes and ways)
+                    val (plat, plng) = if (element.has("lat") && element.has("lon")) {
+                        Pair(element.getDouble("lat"), element.getDouble("lon"))
+                    } else if (element.has("center")) {
+                        val center = element.getJSONObject("center")
+                        Pair(center.getDouble("lat"), center.getDouble("lon"))
+                    } else {
+                        Pair(lat, lng) // Fallback to user's location if no coords found
                     }
+                    
+                    out.add(PlaceItem(name, address, plat, plng))
                 }
-                out
-            } else emptyList()
-        } catch (e: Exception) {
-            emptyList()
+            }
+            
+            // If no hospitals found, add a helpful message
+            if (out.isEmpty()) {
+                out.add(PlaceItem("No hospitals found", "Try moving to a different location", lat, lng))
+            }
         }
+        out
+    } catch (e: Exception) {
+        e.printStackTrace()
+        listOf(PlaceItem("Error loading hospitals", "Please check your internet connection", lat, lng))
     }
+}
 
     companion object { private const val REQ_LOCATION = 1001 }
 }
